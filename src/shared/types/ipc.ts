@@ -21,7 +21,8 @@ export const IpcChannels = {
 
   // Lyrics (Phase 2)
   LYRICS_RELOAD: 'lyrics:reload',
-  LYRICS_LINES_CHANGED: 'lyrics:linesChanged'
+  LYRICS_LINES_CHANGED: 'lyrics:linesChanged',
+  LYRICS_TEXT_COLOR_CHANGED: 'lyrics:textColorChanged'
 } as const
 
 export type IpcChannelName = (typeof IpcChannels)[keyof typeof IpcChannels]
@@ -43,4 +44,5 @@ export interface IpcEventMap {
   [IpcChannels.OVERLAY_STATE_CHANGED]: OverlayState
   [IpcChannels.SONG_TRACK_CHANGED]: NowPlayingTrack | null
   [IpcChannels.LYRICS_LINES_CHANGED]: ActiveLines
+  [IpcChannels.LYRICS_TEXT_COLOR_CHANGED]: 'black' | 'white'
 }

@@ -1,17 +1,36 @@
 import { app, Menu, MenuItem, Tray, nativeImage } from 'electron'
-import { join } from 'path'
 import type { OverlayWindowManager } from '../windows/overlayWindow'
 import { SettingsStore } from '../settings/settingsStore'
 import type { OverlaySettings } from '../../shared/types/settings'
+import { APP_LOGO_URL } from '../../shared/constants/defaults'
 
 let trayInstance: Tray | null = null
+
+function prepareTrayIcon(image: Electron.NativeImage): Electron.NativeImage {
+  return image.resize({ width: 40, height: 25 })
+}
+
+async function loadTrayIcon(): Promise<Electron.NativeImage> {
+  try {
+    const response = await fetch(APP_LOGO_URL)
+    if (!response.ok) throw new Error(`logo fetch failed: ${response.status}`)
+    const buffer = Buffer.from(await response.arrayBuffer())
+    let icon = nativeImage.createFromBuffer(buffer)
+    if (icon.isEmpty()) throw new Error('empty image')
+    icon = prepareTrayIcon(icon)
+    icon.setTemplateImage(false)
+    return icon
+  } catch {
+    return nativeImage.createEmpty()
+  }
+}
 
 function buildMenu(overlay: OverlayWindowManager, settings: OverlaySettings): Menu {
   const state = overlay.getState()
 
   return Menu.buildFromTemplate([
     {
-      label: 'LyricOverlay',
+      label: 'goLyrics',
       enabled: false
     },
     { type: 'separator' },
@@ -65,7 +84,7 @@ function buildMenu(overlay: OverlayWindowManager, settings: OverlaySettings): Me
     },
     { type: 'separator' },
     {
-      label: 'Quit LyricOverlay',
+      label: 'Quit goLyrics',
       accelerator: 'Command+Q',
       click: () => app.quit()
     }
@@ -78,30 +97,18 @@ function rebuildMenu(overlay: OverlayWindowManager, settings: OverlaySettings): 
 }
 
 export const TrayManager = {
-  create(overlay: OverlayWindowManager, settings: OverlaySettings): void {
-    const iconPath = join(__dirname, '../../resources/trayIconTemplate.png')
-    let icon: Electron.NativeImage
-
-    try {
-      icon = nativeImage.createFromPath(iconPath)
-      if (icon.isEmpty()) throw new Error('empty image')
-      icon.setTemplateImage(true)
-    } catch {
-      // Fallback: create a minimal 1x1 template image so the tray still works
-      icon = nativeImage.createEmpty()
-    }
+  async create(overlay: OverlayWindowManager, settings: OverlaySettings): Promise<void> {
+    const icon = await loadTrayIcon()
 
     trayInstance = new Tray(icon)
-    trayInstance.setToolTip('LyricOverlay')
+    trayInstance.setToolTip('goLyrics')
     trayInstance.setContextMenu(buildMenu(overlay, settings))
 
-    // Left-click on the tray icon toggles the overlay on macOS
     trayInstance.on('click', () => {
       overlay.toggle()
       rebuildMenu(overlay, settings)
     })
 
-    // Keep tray menu fresh when the overlay state changes
     overlay.window?.on('show', () => rebuildMenu(overlay, settings))
     overlay.window?.on('hide', () => rebuildMenu(overlay, settings))
   },

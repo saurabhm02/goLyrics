@@ -2,9 +2,15 @@ import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 import type { OverlaySettings, OverlayState } from '../../shared/types/settings'
 import { IpcChannels } from '../../shared/types/ipc'
+import {
+  DEFAULT_OVERLAY_BOTTOM_GAP,
+  DEFAULT_OVERLAY_HEIGHT,
+  getOverlayWidthForDisplay
+} from '../../shared/constants/defaults'
 import { SettingsStore } from '../settings/settingsStore'
 
 const MOVE_DEBOUNCE_MS = 500
+const DRAG_MODE_OVERLAY_HEIGHT = 76
 
 export class OverlayWindowManager {
   private win: BrowserWindow | null = null
@@ -13,14 +19,56 @@ export class OverlayWindowManager {
   constructor(private settings: OverlaySettings) {}
 
   async create(): Promise<void> {
-    const { x, y, width, height } = this.settings
+    let { x, y, width, height } = this.settings
+    const display = screen.getDisplayNearestPoint({ x, y })
+    const area = display.workArea
+    const isOffscreen =
+      x < area.x - width ||
+      y < area.y - height ||
+      x > area.x + area.width ||
+      y > area.y + area.height
+
+    if (isOffscreen) {
+      const centered = this.getBottomCenterPosition(height)
+      x = centered.x
+      y = centered.y
+      width = centered.width
+      this.settings.x = x
+      this.settings.y = y
+      this.settings.width = width
+      SettingsStore.set('x', x)
+      SettingsStore.set('y', y)
+      SettingsStore.set('width', width)
+    }
+
+    // Shrink legacy tall windows so lyrics sit on the bottom edge.
+    if (height > 80) {
+      const oldBottom = y + height
+      height = DEFAULT_OVERLAY_HEIGHT
+      y = oldBottom - height
+      this.settings.height = height
+      this.settings.y = y
+      SettingsStore.set('height', height)
+      SettingsStore.set('y', y)
+    }
+
+    // Full-width bottom bar keeps lyrics centered on screen.
+    const { workArea } = display
+    const fullWidth = getOverlayWidthForDisplay(workArea.width)
+    if (width !== fullWidth || x !== workArea.x) {
+      width = fullWidth
+      x = workArea.x
+      this.settings.width = width
+      this.settings.x = x
+      SettingsStore.set('width', width)
+      SettingsStore.set('x', x)
+    }
 
     this.win = new BrowserWindow({
       x,
       y,
       width,
       height,
-      // Panel type is critical: it appears above fullscreen apps on macOS
       type: 'panel',
       frame: false,
       transparent: true,
@@ -68,6 +116,7 @@ export class OverlayWindowManager {
     }
 
     this.win.once('ready-to-show', () => {
+      this.clampToWorkArea()
       if (this.settings.visible) {
         this.win?.show()
       }
@@ -109,10 +158,25 @@ export class OverlayWindowManager {
 
   setDragMode(enabled: boolean): void {
     if (!this.win) return
-    // In drag mode, the window must receive mouse events to be draggable
+    this.persistCurrentBounds()
     this.setClickThrough(!enabled)
     this.settings.dragMode = enabled
     SettingsStore.set('dragMode', enabled)
+
+    const bounds = this.win.getBounds()
+    const targetHeight = enabled ? DRAG_MODE_OVERLAY_HEIGHT : DEFAULT_OVERLAY_HEIGHT
+    const bottom = bounds.y + bounds.height
+    const nextY = bottom - targetHeight
+    this.win.setBounds({ x: bounds.x, y: nextY, width: bounds.width, height: targetHeight })
+    this.settings.height = targetHeight
+    this.settings.y = nextY
+    SettingsStore.set('height', targetHeight)
+    SettingsStore.set('y', nextY)
+
+    if (!enabled) {
+      // Capture final window position after the drag release event is committed.
+      setTimeout(() => this.persistCurrentBounds(), 80)
+    }
     this.broadcastState()
   }
 
@@ -148,30 +212,75 @@ export class OverlayWindowManager {
   private onMoved(): void {
     if (this.moveTimer) clearTimeout(this.moveTimer)
     this.moveTimer = setTimeout(() => {
-      if (!this.win || this.win.isDestroyed()) return
-      const { x, y } = this.win.getBounds()
-      SettingsStore.set('x', x)
-      SettingsStore.set('y', y)
-      this.settings.x = x
-      this.settings.y = y
+      this.persistCurrentBounds()
     }, MOVE_DEBOUNCE_MS)
   }
 
-  private centerOnPrimaryDisplay(): { x: number; y: number } {
-    const { workAreaSize } = screen.getPrimaryDisplay()
+  private persistCurrentBounds(): void {
+    if (!this.win || this.win.isDestroyed()) return
+    const { x, y } = this.win.getBounds()
+    SettingsStore.set('x', x)
+    SettingsStore.set('y', y)
+    this.settings.x = x
+    this.settings.y = y
+  }
+
+  private getBottomCenterPosition(height = this.settings.height): { x: number; y: number; width: number } {
+    const { workArea } = screen.getPrimaryDisplay()
+    const width = getOverlayWidthForDisplay(workArea.width)
     return {
-      x: Math.round((workAreaSize.width - this.settings.width) / 2),
-      y: Math.round(workAreaSize.height - this.settings.height - 80)
+      x: workArea.x,
+      y: Math.round(workArea.y + workArea.height - height - DEFAULT_OVERLAY_BOTTOM_GAP),
+      width
+    }
+  }
+
+  private clampToWorkArea(): void {
+    if (!this.win || this.win.isDestroyed()) return
+
+    const bounds = this.win.getBounds()
+    const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
+    const { workArea } = display
+    let { x, y, width, height } = bounds
+
+    const bottom = y + height
+    const workBottom = workArea.y + workArea.height
+    if (bottom > workBottom - DEFAULT_OVERLAY_BOTTOM_GAP) {
+      y = workBottom - height - DEFAULT_OVERLAY_BOTTOM_GAP
+    }
+    if (y < workArea.y) {
+      y = workArea.y
+    }
+
+    const minX = workArea.x
+    const maxX = workArea.x + workArea.width - width
+    x = Math.min(Math.max(x, minX), maxX)
+
+    if (x !== bounds.x || y !== bounds.y) {
+      this.win.setPosition(x, y)
+      this.settings.x = x
+      this.settings.y = y
+      SettingsStore.set('x', x)
+      SettingsStore.set('y', y)
     }
   }
 
   resetPosition(): void {
     if (!this.win) return
-    const { x, y } = this.centerOnPrimaryDisplay()
-    this.win.setPosition(x, y)
+    const { x, y, width } = this.getBottomCenterPosition(DEFAULT_OVERLAY_HEIGHT)
+    this.win.setBounds({
+      x,
+      y,
+      width,
+      height: DEFAULT_OVERLAY_HEIGHT
+    })
     SettingsStore.set('x', x)
     SettingsStore.set('y', y)
+    SettingsStore.set('width', width)
+    SettingsStore.set('height', DEFAULT_OVERLAY_HEIGHT)
     this.settings.x = x
     this.settings.y = y
+    this.settings.width = width
+    this.settings.height = DEFAULT_OVERLAY_HEIGHT
   }
 }

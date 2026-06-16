@@ -14,12 +14,9 @@ export function DragHandle({ visible }: DragHandleProps): React.JSX.Element | nu
   if (!visible) return null
 
   return (
-    <div
-      className="drag-region flex items-center justify-center w-full h-6 cursor-grab rounded-t-2xl"
-      title="Drag to reposition"
-    >
+    <div className="drag-region drag-handle" title="Drag to reposition">
       {/* Pill indicator */}
-      <div className="no-drag w-10 h-1 rounded-full bg-white/30" />
+      <div className="no-drag drag-handle-pill" />
     </div>
   )
 }

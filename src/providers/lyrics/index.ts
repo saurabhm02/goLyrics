@@ -1,12 +1,13 @@
 import type { LyricsProvider } from './LyricsProvider'
+import { YouTubeTranscriptLyricsProvider } from './YouTubeTranscriptLyricsProvider'
+import { LrcLibLyricsProvider } from './LrcLibLyricsProvider'
 
 export type { LyricsProvider }
-export { parseLrc } from './LyricsProvider'
+export { parseLrc, plainLyricsToTimedLyrics } from './LyricsProvider'
+export { YouTubeTranscriptLyricsProvider }
+export { LrcLibLyricsProvider }
 
-/**
- * Returns the ordered lyrics provider registry.
- * Phase 2 adds LocalLrcProvider; Phase 4 adds RemoteLyricsProvider.
- */
+
 export function buildLyricsProviderRegistry(): LyricsProvider[] {
-  return []
+  return [new YouTubeTranscriptLyricsProvider(), new LrcLibLyricsProvider()]
 }

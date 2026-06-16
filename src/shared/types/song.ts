@@ -6,6 +6,9 @@ export interface NowPlayingTrack {
   album?: string
   durationMs?: number
   positionMs?: number
+  sourceUrl?: string
+  liveCaptionText?: string
+  ended?: boolean
   isPlaying: boolean
   source: SongSource
   providerId: string

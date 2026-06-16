@@ -1,8 +1,8 @@
-# LyricOverlay Architecture
+# goLyrics Architecture
 
 ## Overview
 
-LyricOverlay is an Electron macOS desktop app that displays karaoke-style synchronized lyrics as a transparent, always-on-top overlay while music plays from any source.
+goLyrics is an Electron macOS desktop app that displays karaoke-style synchronized lyrics as a transparent, always-on-top overlay while music plays from any source.
 
 ## Process Model
 
@@ -22,7 +22,7 @@ LyricOverlay is an Electron macOS desktop app that displays karaoke-style synchr
                 │ IPC (typed via contextBridge)
 ┌───────────────▼──────────────────────────┐
 │            Preload Bridge                │
-│   window.lyricOverlay = { ... }          │
+│   window.goLyrics = { ... }          │
 └───────────────┬──────────────────────────┘
                 │
 ┌───────────────▼──────────────────────────┐
@@ -70,7 +70,7 @@ win.setIgnoreMouseEvents(true, { forward: true })  // click-through
 ## Click-Through vs Drag Mode
 
 macOS does not support per-region mouse event ignoring without native code.
-LyricOverlay uses a **drag mode toggle** to switch behavior:
+goLyrics uses a **drag mode toggle** to switch behavior:
 
 - **Default** (click-through ON): `setIgnoreMouseEvents(true, { forward: true })` — clicks pass to the app below.
 - **Drag mode ON**: `setIgnoreMouseEvents(false)` — the overlay receives mouse events. The drag handle bar uses `-webkit-app-region: drag`.
@@ -79,11 +79,11 @@ Toggle via: Tray menu → "Toggle Drag Mode"
 
 ## IPC Contract
 
-All IPC is defined in `src/shared/types/ipc.ts`. The preload bridge (`src/preload/index.ts`) exposes exactly these methods on `window.lyricOverlay`. The renderer never calls `ipcRenderer` directly.
+All IPC is defined in `src/shared/types/ipc.ts`. The preload bridge (`src/preload/index.ts`) exposes exactly these methods on `window.goLyrics`. The renderer never calls `ipcRenderer` directly.
 
 ## Settings Persistence
 
-`electron-store` writes to: `~/Library/Application Support/LyricOverlay/config.json`
+`electron-store` writes to: `~/Library/Application Support/goLyrics/config.json`
 
 Fields: x, y, width, height, visible, clickThrough, dragMode, showInDock, opacity.
 

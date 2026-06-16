@@ -3,7 +3,7 @@ import { IpcChannels } from '../shared/types/ipc'
 import type { OverlayState, OverlaySettings } from '../shared/types/settings'
 import type { NowPlayingTrack } from '../shared/types/song'
 import type { ActiveLines } from '../shared/types/lyrics'
-import type { LyricOverlayAPI } from '../shared/types/api'
+import type { goLyricsAPI } from '../shared/types/api'
 
 function on<T>(channel: string, cb: (data: T) => void): () => void {
   const handler = (_: Electron.IpcRendererEvent, data: T): void => cb(data)
@@ -11,7 +11,7 @@ function on<T>(channel: string, cb: (data: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, handler)
 }
 
-const api: LyricOverlayAPI = {
+const api: goLyricsAPI = {
   // ---- Overlay control ----
   toggleOverlay: (): Promise<OverlayState> =>
     ipcRenderer.invoke(IpcChannels.OVERLAY_TOGGLE),
@@ -47,7 +47,10 @@ const api: LyricOverlayAPI = {
     ipcRenderer.invoke(IpcChannels.LYRICS_RELOAD),
 
   onLyricsChanged: (cb: (lines: ActiveLines) => void) =>
-    on<ActiveLines>(IpcChannels.LYRICS_LINES_CHANGED, cb)
+    on<ActiveLines>(IpcChannels.LYRICS_LINES_CHANGED, cb),
+
+  onLyricsTextColorChanged: (cb: (color: 'black' | 'white') => void) =>
+    on<'black' | 'white'>(IpcChannels.LYRICS_TEXT_COLOR_CHANGED, cb)
 }
 
-contextBridge.exposeInMainWorld('lyricOverlay', api)
+contextBridge.exposeInMainWorld('goLyrics', api)

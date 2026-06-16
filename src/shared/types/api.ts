@@ -5,11 +5,11 @@ import type { ActiveLines } from './lyrics'
 type Unsubscribe = () => void
 
 /**
- * The bridge API exposed on window.lyricOverlay by the preload script.
+ * The bridge API exposed on window.goLyrics by the preload script.
  * Defined here (shared) so the renderer can import the type without
  * pulling in Electron-specific modules.
  */
-export interface LyricOverlayAPI {
+export interface goLyricsAPI {
   // Overlay control
   toggleOverlay: () => Promise<OverlayState>
   getOverlayState: () => Promise<OverlayState>
@@ -28,4 +28,5 @@ export interface LyricOverlayAPI {
   // Lyrics (Phase 2)
   reloadLyrics: () => Promise<boolean>
   onLyricsChanged: (cb: (lines: ActiveLines) => void) => Unsubscribe
+  onLyricsTextColorChanged: (cb: (color: 'black' | 'white') => void) => Unsubscribe
 }

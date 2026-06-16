@@ -1,7 +1,14 @@
 import type { OverlaySettings } from '../types/settings'
 
-export const DEFAULT_OVERLAY_WIDTH = 600
-export const DEFAULT_OVERLAY_HEIGHT = 160
+/** Fallback width only; runtime uses full display work-area width for true centering */
+export const DEFAULT_OVERLAY_WIDTH = 720
+export const DEFAULT_OVERLAY_HEIGHT = 56
+/** Gap between overlay bottom edge and display work area bottom */
+export const DEFAULT_OVERLAY_BOTTOM_GAP = 10
+
+export function getOverlayWidthForDisplay(workAreaWidth: number): number {
+  return workAreaWidth
+}
 export const DEFAULT_OVERLAY_OPACITY = 0.92
 
 // Default position is set at runtime to bottom-center of primary display.
@@ -19,4 +26,5 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
 }
 
 export const SETTINGS_FILE_NAME = 'config'
-export const APP_NAME = 'LyricOverlay'
+export const APP_NAME = 'goLyrics'
+export const APP_LOGO_URL = 'https://kafan.s3.ap-south-1.amazonaws.com/golyrics.png'

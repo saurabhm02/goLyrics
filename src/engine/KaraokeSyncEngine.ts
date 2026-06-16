@@ -2,7 +2,7 @@ import type { ParsedLyrics, ActiveLines, LrcLine } from '../shared/types/lyrics'
 
 const PLACEHOLDER_ACTIVE_LINES: ActiveLines = {
   prev: { timeMs: 0, text: 'Waiting for music...' },
-  current: { timeMs: 0, text: '♪  LyricOverlay  ♪' },
+  current: { timeMs: 0, text: '♪  goLyrics  ♪' },
   next: { timeMs: 0, text: 'Press Option+Space to detect song' },
   currentIndex: 1
 }

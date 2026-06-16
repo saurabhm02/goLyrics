@@ -3,35 +3,44 @@ import Store from 'electron-store'
 import type { OverlaySettings } from '../../shared/types/settings'
 import {
   DEFAULT_OVERLAY_SETTINGS,
-  DEFAULT_OVERLAY_WIDTH,
   DEFAULT_OVERLAY_HEIGHT,
+  DEFAULT_OVERLAY_BOTTOM_GAP,
+  getOverlayWidthForDisplay,
   SETTINGS_FILE_NAME,
   APP_NAME
 } from '../../shared/constants/defaults'
 
-const store = new Store<OverlaySettings>({
-  name: SETTINGS_FILE_NAME,
-  cwd: app.getPath('userData'),
-  defaults: DEFAULT_OVERLAY_SETTINGS
-})
+let store: Store<OverlaySettings> | null = null
+
+function getStore(): Store<OverlaySettings> {
+  if (store) return store
+  store = new Store<OverlaySettings>({
+    name: SETTINGS_FILE_NAME,
+    cwd: app.getPath('userData'),
+    defaults: DEFAULT_OVERLAY_SETTINGS
+  })
+  return store
+}
 
 function getDefaultBounds(): Pick<OverlaySettings, 'x' | 'y' | 'width' | 'height'> {
-  const primary = screen.getPrimaryDisplay()
-  const { width: sw, height: sh } = primary.workAreaSize
-  const x = Math.round((sw - DEFAULT_OVERLAY_WIDTH) / 2)
-  const y = Math.round(sh - DEFAULT_OVERLAY_HEIGHT - 80)
-  return { x, y, width: DEFAULT_OVERLAY_WIDTH, height: DEFAULT_OVERLAY_HEIGHT }
+  const { workArea } = screen.getPrimaryDisplay()
+  const width = getOverlayWidthForDisplay(workArea.width)
+  const x = workArea.x
+  const y = Math.round(
+    workArea.y + workArea.height - DEFAULT_OVERLAY_HEIGHT - DEFAULT_OVERLAY_BOTTOM_GAP
+  )
+  return { x, y, width, height: DEFAULT_OVERLAY_HEIGHT }
 }
 
 export const SettingsStore = {
   load(): OverlaySettings {
-    const stored = store.store
+    const currentStore = getStore()
+    const stored = currentStore.store
 
-    // If position was never set (both x and y are 0), compute bottom-center
     if (stored.x === 0 && stored.y === 0) {
       const bounds = getDefaultBounds()
-      store.set('x', bounds.x)
-      store.set('y', bounds.y)
+      currentStore.set('x', bounds.x)
+      currentStore.set('y', bounds.y)
       return { ...stored, ...bounds }
     }
 
@@ -39,27 +48,28 @@ export const SettingsStore = {
   },
 
   get<K extends keyof OverlaySettings>(key: K): OverlaySettings[K] {
-    return store.get(key)
+    return getStore().get(key)
   },
 
   set<K extends keyof OverlaySettings>(key: K, value: OverlaySettings[K]): void {
-    store.set(key, value)
+    getStore().set(key, value)
   },
 
   update(patch: Partial<OverlaySettings>): OverlaySettings {
+    const currentStore = getStore()
     for (const [key, value] of Object.entries(patch)) {
-      store.set(key as keyof OverlaySettings, value as OverlaySettings[keyof OverlaySettings])
+      currentStore.set(key as keyof OverlaySettings, value as OverlaySettings[keyof OverlaySettings])
     }
-    return store.store
+    return currentStore.store
   },
 
   getAll(): OverlaySettings {
-    return store.store
+    return getStore().store
   },
 
   get filePath(): string {
-    return store.path
+    return getStore().path
   }
 }
 
-console.log(`[${APP_NAME}] Settings at: ${store.path}`)
+console.log(`[${APP_NAME}] Settings store initialized for ${APP_NAME}`)

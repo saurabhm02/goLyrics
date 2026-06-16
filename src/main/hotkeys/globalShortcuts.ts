@@ -1,5 +1,6 @@
 import { globalShortcut, app } from 'electron'
 import { Hotkeys } from '../../shared/constants/hotkeys'
+import { IpcChannels } from '../../shared/types/ipc'
 import type { OverlayWindowManager } from '../windows/overlayWindow'
 import type { SongOrchestrator } from '../services/songOrchestrator'
 import type { LyricsOrchestrator } from '../services/lyricsOrchestrator'
@@ -22,6 +23,7 @@ export const GlobalShortcutManager = {
         handler: () => {
           songOrchestrator.refresh().then((track) => {
             console.log('[Hotkey] Song refresh:', track?.title ?? 'no track detected')
+            overlay.window?.webContents.send(IpcChannels.SONG_TRACK_CHANGED, track)
           })
         }
       },

@@ -1,22 +1,20 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* Critical: make the window background transparent */
 html,
 body,
 #root {
   background: transparent !important;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* Custom scrollbar suppression for overlay */
-::-webkit-scrollbar {
-  display: none;
+:root {
+  --lyrics-color: #000000;
+  --lyrics-muted-color: rgba(0, 0, 0, 0.55);
+  --lyrics-handle-color: rgba(0, 0, 0, 0.25);
 }
 
 /* Drag region — applied in drag mode only */
@@ -26,4 +24,102 @@ body,
 
 .no-drag {
   -webkit-app-region: no-drag;
+}
+
+.overlay-shell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.overlay-shell.click-through {
+  pointer-events: none;
+}
+
+.overlay-shell.drag-mode {
+  pointer-events: auto;
+}
+
+.overlay-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.overlay-shell.drag-mode .overlay-content {
+  justify-content: flex-start;
+}
+
+.karaoke-wrap {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.karaoke-line {
+  display: block;
+  width: 100%;
+  margin: 0;
+  color: var(--lyrics-color);
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.35;
+  font-size: 34px;
+  white-space: nowrap;
+  overflow: visible;
+  text-shadow: none;
+}
+
+.karaoke-empty-wrap {
+  width: 100%;
+  text-align: center;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+.karaoke-idle {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--lyrics-muted-color);
+}
+
+.karaoke-drag-label {
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  font-size: 10px;
+  color: var(--lyrics-muted-color);
+  text-align: center;
+}
+
+.drag-handle {
+  width: 100%;
+  height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+}
+
+.drag-handle-pill {
+  width: 40px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--lyrics-handle-color);
+}
+
+@media (max-width: 900px) {
+  .karaoke-line {
+    font-size: 28px;
+  }
 }

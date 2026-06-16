@@ -17,13 +17,13 @@ export function useOverlayState(): OverlayState {
 
   useEffect(() => {
     // Fetch initial state from main process
-    window.lyricOverlay
+    window.goLyrics
       .getOverlayState()
       .then(setState)
       .catch(() => {})
 
     // Subscribe to state changes pushed from main
-    const unsubscribe = window.lyricOverlay.onOverlayStateChanged(setState)
+    const unsubscribe = window.goLyrics.onOverlayStateChanged(setState)
     return unsubscribe
   }, [])
 

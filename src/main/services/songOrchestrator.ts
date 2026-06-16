@@ -9,6 +9,7 @@ export class SongOrchestrator {
   private providers: SongProvider[] = []
   private currentTrack: NowPlayingTrack | null = null
   private onChangeCallback: ((track: NowPlayingTrack | null) => void) | null = null
+  private pollTimer: ReturnType<typeof setInterval> | null = null
 
   register(...providers: SongProvider[]): void {
     this.providers.push(...providers)
@@ -29,17 +30,23 @@ export class SongOrchestrator {
 
   startPolling(onChange: (track: NowPlayingTrack | null) => void): void {
     this.onChangeCallback = onChange
-    for (const provider of this.providers) {
-      provider.startPolling((track) => {
-        this.currentTrack = track
-        this.onChangeCallback?.(track)
-      })
+    if (this.pollTimer) clearInterval(this.pollTimer)
+
+    const emitPolledTrack = async (): Promise<void> => {
+      const track = await this.refresh()
+      this.onChangeCallback?.(track)
     }
+
+    void emitPolledTrack()
+    this.pollTimer = setInterval(() => {
+      void emitPolledTrack()
+    }, 500)
   }
 
   stopPolling(): void {
-    for (const provider of this.providers) {
-      provider.stopPolling()
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer)
+      this.pollTimer = null
     }
     this.onChangeCallback = null
   }

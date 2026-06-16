@@ -1,53 +1,57 @@
 import React from 'react'
 import type { ActiveLines } from '../../shared/types/lyrics'
-
-// Phase 1 placeholder — hardcoded lines until Phase 2 wires the sync engine
-const PLACEHOLDER_LINES: ActiveLines = {
-  prev: { timeMs: 0, text: 'Waiting for music...' },
-  current: { timeMs: 0, text: '♪  LyricOverlay  ♪' },
-  next: { timeMs: 0, text: 'Press Option+Space to detect song' },
-  currentIndex: 1
-}
+import type { NowPlayingTrack } from '../../shared/types/song'
 
 interface KaraokeDisplayProps {
   lines?: ActiveLines
+  track?: NowPlayingTrack | null
   dragMode: boolean
 }
 
 export function KaraokeDisplay({
-  lines = PLACEHOLDER_LINES,
+  lines,
+  track,
   dragMode
 }: KaraokeDisplayProps): React.JSX.Element {
-  const { prev, current, next } = lines
+  const hasLine = Boolean(lines?.current?.text?.trim())
+  const displayLines: ActiveLines | null = hasLine
+    ? (lines as ActiveLines)
+    : track
+      ? {
+          prev: null,
+          current: { timeMs: 0, text: `${track.artist} · ${track.title}` },
+          next: null,
+          currentIndex: 0
+        }
+      : null
+
+  if (!displayLines?.current?.text) {
+    return dragMode ? (
+      <div className="karaoke-empty-wrap">
+        <div className="karaoke-drag-label">Drag mode enabled</div>
+      </div>
+    ) : (
+      <div className="karaoke-empty-wrap">
+        <div className="karaoke-idle">goLyrics</div>
+      </div>
+    )
+  }
+
+  const { current } = displayLines
 
   return (
-    <div
-      className={`flex flex-col items-center justify-center gap-1 px-6 py-4 ${dragMode ? 'pt-1' : 'py-4'}`}
-    >
-      {/* Previous line */}
+    <div className={`karaoke-wrap ${dragMode ? 'karaoke-wrap-drag' : ''}`}>
       <div
-        className="text-sm font-medium text-white/40 truncate max-w-full transition-all duration-300 animate-fade-in"
-        aria-label="previous lyric line"
-      >
-        {prev?.text ?? ''}
-      </div>
-
-      {/* Current line — highlighted */}
-      <div
-        className="text-xl font-semibold text-white drop-shadow-lg truncate max-w-full transition-all duration-300 animate-slide-up"
+        className="karaoke-line"
         aria-label="current lyric line"
         aria-live="polite"
       >
         {current?.text ?? ''}
       </div>
 
-      {/* Next line */}
-      <div
-        className="text-sm font-medium text-white/40 truncate max-w-full transition-all duration-300 animate-fade-in"
-        aria-label="next lyric line"
-      >
-        {next?.text ?? ''}
-      </div>
+      {dragMode && (
+        <div className="karaoke-drag-label">Drag mode enabled</div>
+      )}
     </div>
   )
 }

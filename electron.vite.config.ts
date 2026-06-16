@@ -41,9 +41,6 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src'),
         '@shared': resolve('src/shared')
       }
-    },
-    css: {
-      postcss: resolve(__dirname, 'postcss.config.js')
     }
   }
 })
