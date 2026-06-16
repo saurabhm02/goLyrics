@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Critical: make the window background transparent */
+html,
+body,
+#root {
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Custom scrollbar suppression for overlay */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Drag region — applied in drag mode only */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}

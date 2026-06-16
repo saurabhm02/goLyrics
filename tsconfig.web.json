@@ -1,0 +1,18 @@
+{
+  "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
+  "include": [
+    "src/renderer/**/*",
+    "src/shared/**/*",
+    "src/engine/**/*"
+  ],
+  "compilerOptions": {
+    "composite": true,
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@renderer/*": ["src/renderer/*"]
+    }
+  }
+}
