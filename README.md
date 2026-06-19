@@ -117,10 +117,15 @@ Without the permissions above, detection, sync, and automatic text color may be 
 | `Option + L` | Toggle overlay visibility |
 | `Option + Space` | Force song detection refresh |
 | `Option + R` | Reload lyrics |
+| `Option + ↑` | Shift lyrics earlier (per-track offset) |
+| `Option + ↓` | Shift lyrics later (per-track offset) |
+| `Option + 0` | Reset per-track sync offset |
 
 ### Menu bar controls
 
 - Show/Hide Overlay
+- Settings…
+- Setup Permissions…
 - Toggle Drag Mode
 - Toggle Click-Through
 - Reset Position
@@ -152,7 +157,30 @@ Output:
 
 - `release/goLyrics-<version>.dmg`
 
-Note: by default this is unsigned. For public distribution you should add code signing + notarization.
+Unsigned local builds work for development. Signed releases are published via GitHub Actions when you push a version tag (for example `v0.2.0`).
+
+### GitHub Releases (signed + notarized)
+
+The workflow at `.github/workflows/release.yml` builds a signed DMG on tag push.
+
+Required repository secrets:
+
+| Secret | Purpose |
+|--------|---------|
+| `CSC_LINK` | Base64-encoded `.p12` signing certificate |
+| `CSC_KEY_PASSWORD` | Certificate password |
+| `APPLE_ID` | Apple ID used for notarization |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+Create a release:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Download the DMG from the GitHub Releases page after the workflow completes.
 
 ---
 
