@@ -1,19 +1,21 @@
 import { ipcMain } from 'electron'
 import { IpcChannels } from './channels'
 import type { OverlayWindowManager } from '../windows/overlayWindow'
+import { OnboardingWindowManager } from '../windows/onboardingWindow'
 import type { SongOrchestrator } from '../services/songOrchestrator'
 import type { LyricsOrchestrator } from '../services/lyricsOrchestrator'
-import { SettingsStore } from '../settings/settingsStore'
+import type { SettingsService } from '../settings/settingsService'
 import type { OverlaySettings } from '../../shared/types/settings'
+import { toggleOverlayWithDismiss } from '../services/overlayVisibility'
 
 export function registerIpc(
   overlay: OverlayWindowManager,
+  settingsService: SettingsService,
   songOrchestrator: SongOrchestrator,
   lyricsOrchestrator: LyricsOrchestrator
 ): void {
-  // ---- Overlay control ----
   ipcMain.handle(IpcChannels.OVERLAY_TOGGLE, () => {
-    overlay.toggle()
+    toggleOverlayWithDismiss()
     return overlay.getState()
   })
 
@@ -31,21 +33,48 @@ export function registerIpc(
     return overlay.getState()
   })
 
-  // ---- Settings ----
+  ipcMain.handle(IpcChannels.OVERLAY_CLOSE_PANEL, () => {
+    overlay.closePanel()
+    return overlay.getPanelMode()
+  })
+
+  ipcMain.handle(IpcChannels.OVERLAY_GET_PANEL_MODE, () => {
+    return overlay.getPanelMode()
+  })
+
   ipcMain.handle(IpcChannels.SETTINGS_GET, () => {
-    return SettingsStore.getAll()
+    return settingsService.getAll()
   })
 
   ipcMain.handle(IpcChannels.SETTINGS_UPDATE, (_, patch: Partial<OverlaySettings>) => {
-    return SettingsStore.update(patch)
+    return settingsService.update(patch)
   })
 
-  // ---- Song detection (Phase 3) ----
+  ipcMain.handle(IpcChannels.SETTINGS_OPEN, async () => {
+    await overlay.showPanel('settings')
+  })
+
+  ipcMain.handle(IpcChannels.SETTINGS_RESET_POSITION, () => {
+    overlay.resetPosition()
+  })
+
+  ipcMain.handle(IpcChannels.CACHE_CLEAR_LYRICS, () => {
+    return lyricsOrchestrator.clearAllCache()
+  })
+
+  ipcMain.handle(IpcChannels.ONBOARDING_COMPLETE, () => {
+    settingsService.update({ onboardingComplete: true })
+    overlay.closePanel()
+  })
+
+  ipcMain.handle(IpcChannels.ONBOARDING_OPEN_SYSTEM_SETTINGS, () => {
+    OnboardingWindowManager.openSystemSettings('automation')
+  })
+
   ipcMain.handle(IpcChannels.SONG_REFRESH, async () => {
     return songOrchestrator.refresh()
   })
 
-  // ---- Lyrics (Phase 2) ----
   ipcMain.handle(IpcChannels.LYRICS_RELOAD, async () => {
     return lyricsOrchestrator.reload()
   })

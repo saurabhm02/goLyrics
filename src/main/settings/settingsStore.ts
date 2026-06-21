@@ -9,6 +9,7 @@ import {
   SETTINGS_FILE_NAME,
   APP_NAME
 } from '../../shared/constants/defaults'
+import { mergeWithDefaults } from './mergeDefaults'
 
 let store: Store<OverlaySettings> | null = null
 
@@ -35,7 +36,7 @@ function getDefaultBounds(): Pick<OverlaySettings, 'x' | 'y' | 'width' | 'height
 export const SettingsStore = {
   load(): OverlaySettings {
     const currentStore = getStore()
-    const stored = currentStore.store
+    const stored = mergeWithDefaults(currentStore.store)
 
     if (stored.x === 0 && stored.y === 0) {
       const bounds = getDefaultBounds()
@@ -60,11 +61,11 @@ export const SettingsStore = {
     for (const [key, value] of Object.entries(patch)) {
       currentStore.set(key as keyof OverlaySettings, value as OverlaySettings[keyof OverlaySettings])
     }
-    return currentStore.store
+    return mergeWithDefaults(currentStore.store)
   },
 
   getAll(): OverlaySettings {
-    return getStore().store
+    return mergeWithDefaults(getStore().store)
   },
 
   get filePath(): string {

@@ -1,148 +1,233 @@
-import { app, desktopCapturer, globalShortcut, screen } from 'electron'
+import { app, globalShortcut } from 'electron'
 import { SettingsStore } from './settings/settingsStore'
+import { SettingsService } from './settings/settingsService'
+import { SyncOffsetStore } from './settings/syncOffsetStore'
 import { OverlayWindowManager } from './windows/overlayWindow'
+import { SettingsWindowManager } from './windows/settingsWindow'
+import { OnboardingWindowManager } from './windows/onboardingWindow'
 import { registerIpc } from './ipc/registerIpc'
 import { GlobalShortcutManager } from './hotkeys/globalShortcuts'
 import { TrayManager } from './tray/trayManager'
 import { SongOrchestrator } from './services/songOrchestrator'
 import { LyricsOrchestrator } from './services/lyricsOrchestrator'
 import { registerLifecycle } from './app/lifecycle'
+import { startUpdateCheck } from './services/updateService'
 import { buildSongProviderRegistry } from '../providers/songs'
 import { buildLyricsProviderRegistry } from '../providers/lyrics'
+import { resolveEnabledProviderIds } from '../shared/constants/songSources'
 import { IpcChannels } from '../shared/types/ipc'
 import { KaraokeSyncEngine } from '../engine/KaraokeSyncEngine'
+import { buildTrackKey } from '../shared/utils/trackKey'
+import { applyLyricsScriptToActiveLines } from '../shared/utils/lyricsTransliteration'
+import { sessionLog } from './debug/sessionLog'
+import {
+  initOverlayVisibility,
+  setAutoShowEnabled,
+  syncOverlayVisibility
+} from './services/overlayVisibility'
 import type { ActiveLines } from '../shared/types/lyrics'
+import type { NowPlayingTrack } from '../shared/types/song'
+import type { OverlaySettings } from '../shared/types/settings'
 
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
-const LYRIC_LEAD_MS = 1000
-
 let overlay: OverlayWindowManager | null = null
+let settingsService: SettingsService | null = null
+let settingsWindow: SettingsWindowManager | null = null
+let onboardingWindow: OnboardingWindowManager | null = null
 let lyricTimer: ReturnType<typeof setInterval> | null = null
-let textColorTimer: ReturnType<typeof setInterval> | null = null
-let lastTextColor: 'black' | 'white' | null = null
+let currentSettings: OverlaySettings | null = null
+let currentTrack: NowPlayingTrack | null = null
+let currentTrackKey: string | null = null
+let playbackStartEpochMs = 0
+let karaokeSyncEngine: KaraokeSyncEngine | null = null
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
+function getTotalSyncOffsetMs(trackKey: string | null): number {
+  const lead = currentSettings?.lyricLeadMs ?? 1000
+  const perTrack = trackKey ? SyncOffsetStore.get(trackKey) : 0
+  return lead + perTrack
 }
 
-function estimateLuminanceFromBitmap(
-  bitmap: Buffer,
-  width: number,
-  height: number,
-  x: number,
-  y: number
-): number {
-  let sum = 0
-  let count = 0
-
-  for (let oy = -2; oy <= 2; oy += 1) {
-    for (let ox = -2; ox <= 2; ox += 1) {
-      const sx = clamp(x + ox, 0, width - 1)
-      const sy = clamp(y + oy, 0, height - 1)
-      const i = (sy * width + sx) * 4
-      const b = bitmap[i] ?? 0
-      const g = bitmap[i + 1] ?? 0
-      const r = bitmap[i + 2] ?? 0
-      const luminance = 0.299 * r + 0.587 * g + 0.114 * b
-      sum += luminance
-      count += 1
-    }
-  }
-
-  return count > 0 ? sum / count : 255
-}
-
-async function detectTextColorForOverlay(): Promise<'black' | 'white'> {
-  const win = overlay?.window
-  if (!win || win.isDestroyed() || !win.isVisible()) return 'black'
-
-  const bounds = win.getBounds()
-  const centerX = bounds.x + Math.round(bounds.width / 2)
-  const centerY = bounds.y + Math.round(bounds.height / 2)
-  const display = screen.getDisplayNearestPoint({ x: centerX, y: centerY })
-
-  const thumbWidth = Math.max(320, Math.floor(display.bounds.width / 4))
-  const thumbHeight = Math.max(180, Math.floor(display.bounds.height / 4))
-  const sources = await desktopCapturer.getSources({
-    types: ['screen'],
-    thumbnailSize: { width: thumbWidth, height: thumbHeight },
-    fetchWindowIcons: false
-  })
-
-  const source =
-    sources.find((s) => s.display_id === String(display.id)) ??
-    sources.find((s) => s.thumbnail.getSize().width > 0) ??
-    null
-
-  if (!source) return 'black'
-
-  const image = source.thumbnail
-  const size = image.getSize()
-  if (size.width <= 0 || size.height <= 0) return 'black'
-
-  const bitmap = image.toBitmap()
-  const rx = (centerX - display.bounds.x) / Math.max(1, display.bounds.width)
-  const ry = (centerY - display.bounds.y) / Math.max(1, display.bounds.height)
-  const px = clamp(Math.round(rx * (size.width - 1)), 0, size.width - 1)
-  const py = clamp(Math.round(ry * (size.height - 1)), 0, size.height - 1)
-  const luminance = estimateLuminanceFromBitmap(bitmap, size.width, size.height, px, py)
-  return luminance < 140 ? 'white' : 'black'
-}
-
-function startAutoTextColorDetection(): void {
-  if (textColorTimer) clearInterval(textColorTimer)
-  textColorTimer = setInterval(() => {
-    detectTextColorForOverlay()
-      .then((color) => {
-        if (color === lastTextColor) return
-        lastTextColor = color
-        overlay?.window?.webContents.send(IpcChannels.LYRICS_TEXT_COLOR_CHANGED, color)
-      })
-      .catch(() => {})
-  }, 800)
+function updatePlaybackEpoch(track: NowPlayingTrack, trackKey: string): void {
+  if (typeof track.positionMs !== 'number') return
+  playbackStartEpochMs = Date.now() - track.positionMs - getTotalSyncOffsetMs(trackKey)
 }
 
 async function bootstrap(): Promise<void> {
   const settings = SettingsStore.load()
-  settings.visible = true
-  settings.dragMode = false
+  currentSettings = settings
 
-  // Control Dock visibility from settings
   if (process.platform === 'darwin' && !settings.showInDock) {
     app.dock.hide()
   }
 
-  // Build provider registries (all stubs in Phase 1)
   const songOrchestrator = new SongOrchestrator()
   songOrchestrator.register(...buildSongProviderRegistry())
+  songOrchestrator.setEnabledProviderIds(resolveEnabledProviderIds(settings))
 
   const lyricsOrchestrator = new LyricsOrchestrator()
   lyricsOrchestrator.register(...buildLyricsProviderRegistry())
-  const karaokeSyncEngine = new KaraokeSyncEngine()
-  let playbackStartEpochMs = 0
+  karaokeSyncEngine = new KaraokeSyncEngine()
+
   let activeTrackKey: string | null = null
   let hasSyncedLyrics = false
   let previousLiveCaption: string | null = null
   let lastLyricsFetchAttemptMs = 0
+  let lyricsFetchGeneration = 0
+
+  const emptyLines: ActiveLines = {
+    prev: null,
+    current: null,
+    next: null,
+    currentIndex: -1,
+    activeWordIndex: -1
+  }
+
+  function sendLyricsLines(lines: ActiveLines): void {
+    const mode = currentSettings?.lyricsScriptMode ?? 'romanized'
+    const displayLines = applyLyricsScriptToActiveLines(lines, mode)
+    // #region agent log
+    if (mode === 'romanized' && lines.current?.text && displayLines.current?.text !== lines.current.text) {
+      sessionLog(
+        'index.ts:sendLyricsLines',
+        'romanized lyrics for display',
+        {
+          originalPreview: lines.current.text.slice(0, 60),
+          romanizedPreview: displayLines.current?.text?.slice(0, 60) ?? null
+        },
+        'H7'
+      )
+    }
+    // #endregion
+    overlay?.window?.webContents.send(IpcChannels.LYRICS_LINES_CHANGED, displayLines)
+  }
+
+  function refreshLyricsDisplay(): void {
+    if (hasSyncedLyrics && karaokeSyncEngine) {
+      sendLyricsLines(karaokeSyncEngine.getActiveLines() ?? emptyLines)
+      return
+    }
+    if (previousLiveCaption && currentTrack) {
+      sendLyricsLines({
+        prev: null,
+        current: { timeMs: 0, text: previousLiveCaption },
+        next: null,
+        currentIndex: 0,
+        activeWordIndex: -1
+      })
+    }
+  }
+
+  async function applyLyricsForTrack(
+    track: NowPlayingTrack,
+    trackKey: string,
+    generation: number,
+    reason: string
+  ): Promise<void> {
+    const lyrics = await lyricsOrchestrator.fetchForTrack(track)
+
+    if (generation !== lyricsFetchGeneration || trackKey !== activeTrackKey) {
+      // #region agent log
+      sessionLog(
+        'index.ts:applyLyricsForTrack',
+        'stale lyrics fetch discarded',
+        {
+          reason,
+          trackKey,
+          activeTrackKey,
+          generation,
+          currentGeneration: lyricsFetchGeneration,
+          foundLyrics: Boolean(lyrics)
+        },
+        'H8'
+      )
+      // #endregion
+      return
+    }
+
+    // #region agent log
+    sessionLog(
+      'index.ts:lyricsFetch',
+      'lyrics fetch applied',
+      {
+        reason,
+        trackKey,
+        foundLyrics: Boolean(lyrics),
+        lineCount: lyrics?.lines.length ?? 0,
+        firstLine: lyrics?.lines[0]?.text?.slice(0, 60) ?? null
+      },
+      'H3-H4'
+    )
+    // #endregion
+
+    if (!lyrics) {
+      karaokeSyncEngine?.clear()
+      hasSyncedLyrics = false
+    } else {
+      karaokeSyncEngine?.setLyrics(lyrics)
+      hasSyncedLyrics = true
+      previousLiveCaption = null
+    }
+  }
 
   overlay = new OverlayWindowManager(settings)
   await overlay.create()
-  startAutoTextColorDetection()
+  initOverlayVisibility(overlay)
 
+  if (settings.dragMode) overlay.setDragMode(true)
+  else overlay.setClickThrough(settings.clickThrough)
 
-  registerIpc(overlay, songOrchestrator, lyricsOrchestrator)
-  GlobalShortcutManager.register(overlay, songOrchestrator, lyricsOrchestrator)
+  settingsService = new SettingsService(overlay, settings)
+  settingsService.onChange((next) => {
+    const prevScriptMode = currentSettings?.lyricsScriptMode
+    currentSettings = next
+    songOrchestrator.setEnabledProviderIds(resolveEnabledProviderIds(next))
+    if (prevScriptMode !== next.lyricsScriptMode) {
+      refreshLyricsDisplay()
+    }
+  })
+  settingsWindow = new SettingsWindowManager(overlay)
+  onboardingWindow = new OnboardingWindowManager(overlay)
+
+  settingsService.broadcastCurrent()
+
+  registerIpc(
+    overlay,
+    settingsService,
+    songOrchestrator,
+    lyricsOrchestrator
+  )
+
+  GlobalShortcutManager.register(overlay, songOrchestrator, lyricsOrchestrator, {
+    getCurrentTrackKey: () => currentTrackKey,
+    adjustOffset: (deltaMs: number) => {
+      if (!currentTrackKey || !currentTrack) return
+      const next = SyncOffsetStore.get(currentTrackKey) + deltaMs
+      SyncOffsetStore.set(currentTrackKey, next)
+      updatePlaybackEpoch(currentTrack, currentTrackKey)
+      console.log(`[Sync] Offset for current track: ${next}ms`)
+    },
+    resetOffset: () => {
+      if (!currentTrackKey || !currentTrack) return
+      SyncOffsetStore.reset(currentTrackKey)
+      updatePlaybackEpoch(currentTrack, currentTrackKey)
+      console.log('[Sync] Offset reset for current track')
+    }
+  })
 
   songOrchestrator.startPolling(async (track) => {
-    const emptyLines: ActiveLines = { prev: null, current: null, next: null, currentIndex: -1 }
+    syncOverlayVisibility(track)
+
+    currentTrack = track
+    lyricsOrchestrator.setCurrentTrack(track)
 
     if (track?.ended) {
       overlay?.window?.webContents.send(IpcChannels.SONG_TRACK_CHANGED, null)
-      overlay?.window?.webContents.send(IpcChannels.LYRICS_LINES_CHANGED, emptyLines)
-      karaokeSyncEngine.clear()
+      sendLyricsLines(emptyLines)
+      karaokeSyncEngine?.clear()
       activeTrackKey = null
+      currentTrackKey = null
       hasSyncedLyrics = false
       previousLiveCaption = null
       if (lyricTimer) {
@@ -155,9 +240,10 @@ async function bootstrap(): Promise<void> {
     overlay?.window?.webContents.send(IpcChannels.SONG_TRACK_CHANGED, track)
 
     if (!track) {
-      overlay?.window?.webContents.send(IpcChannels.LYRICS_LINES_CHANGED, emptyLines)
-      karaokeSyncEngine.clear()
+      sendLyricsLines(emptyLines)
+      karaokeSyncEngine?.clear()
       activeTrackKey = null
+      currentTrackKey = null
       hasSyncedLyrics = false
       previousLiveCaption = null
       if (lyricTimer) {
@@ -167,41 +253,60 @@ async function bootstrap(): Promise<void> {
       return
     }
 
+    const trackKey = buildTrackKey(track)
+    currentTrackKey = trackKey
+
+    // #region agent log
+    sessionLog(
+      'index.ts:songPoll',
+      'track polled',
+      {
+        title: track.title,
+        artist: track.artist,
+        providerId: track.providerId,
+        sourceUrl: track.sourceUrl ?? null,
+        trackKey,
+        activeTrackKey,
+        trackKeyChanged: trackKey !== activeTrackKey,
+        hasSyncedLyrics,
+        lyricTimerActive: lyricTimer !== null,
+        liveCaptionLen: track.liveCaptionText?.trim().length ?? 0
+      },
+      'H1-H3-H5'
+    )
+    // #endregion
+
     if (typeof track.positionMs === 'number') {
-      playbackStartEpochMs = Date.now() - track.positionMs - LYRIC_LEAD_MS
+      updatePlaybackEpoch(track, trackKey)
     }
 
-    const trackKey = `${track.providerId}:${track.artist}:${track.title}`
     if (trackKey !== activeTrackKey) {
+      if (lyricTimer) {
+        clearInterval(lyricTimer)
+        lyricTimer = null
+      }
+      karaokeSyncEngine?.clear()
+      hasSyncedLyrics = false
+      previousLiveCaption = null
+      sendLyricsLines(emptyLines)
+
+      lyricsFetchGeneration += 1
+      lyricsOrchestrator.invalidateMemoryCache()
       activeTrackKey = trackKey
-      lastLyricsFetchAttemptMs = Date.now()
-      const lyrics = await lyricsOrchestrator.fetchForTrack(track)
-      if (!lyrics) {
-        karaokeSyncEngine.clear()
-        hasSyncedLyrics = false
-      } else {
-        karaokeSyncEngine.setLyrics(lyrics)
-        hasSyncedLyrics = true
-        previousLiveCaption = null
-      }
+      const generation = lyricsFetchGeneration
+      await applyLyricsForTrack(track, trackKey, generation, 'track-change')
     } else if (!hasSyncedLyrics && Date.now() - lastLyricsFetchAttemptMs > 5000) {
+      lyricsFetchGeneration += 1
+      const generation = lyricsFetchGeneration
       lastLyricsFetchAttemptMs = Date.now()
-      const lyrics = await lyricsOrchestrator.fetchForTrack(track)
-      if (lyrics) {
-        karaokeSyncEngine.setLyrics(lyrics)
-        hasSyncedLyrics = true
-        previousLiveCaption = null
-      }
+      await applyLyricsForTrack(track, trackKey, generation, 'retry')
     }
 
     if (hasSyncedLyrics && !lyricTimer) {
       lyricTimer = setInterval(() => {
         const positionMs = Math.max(0, Date.now() - playbackStartEpochMs)
-        karaokeSyncEngine.setPositionMs(positionMs)
-        overlay?.window?.webContents.send(
-          IpcChannels.LYRICS_LINES_CHANGED,
-          karaokeSyncEngine.getActiveLines()
-        )
+        karaokeSyncEngine?.setPositionMs(positionMs)
+        sendLyricsLines(karaokeSyncEngine?.getActiveLines() ?? emptyLines)
       }, 100)
     }
 
@@ -212,28 +317,74 @@ async function bootstrap(): Promise<void> {
       }
       const liveCaption = track.liveCaptionText?.trim()
       if (!liveCaption) {
-        overlay?.window?.webContents.send(IpcChannels.LYRICS_LINES_CHANGED, emptyLines)
+        sendLyricsLines(emptyLines)
         previousLiveCaption = null
         return
       }
+      // #region agent log
+      sessionLog(
+        'index.ts:liveCaption',
+        'showing live caption fallback',
+        {
+          trackKey,
+          captionPreview: liveCaption.slice(0, 80)
+        },
+        'H5'
+      )
+      // #endregion
       const lines: ActiveLines = {
         prev: previousLiveCaption ? { timeMs: 0, text: previousLiveCaption } : null,
         current: { timeMs: 0, text: liveCaption },
         next: null,
-        currentIndex: 0
+        currentIndex: 0,
+        activeWordIndex: -1
       }
       previousLiveCaption = liveCaption
-      overlay?.window?.webContents.send(IpcChannels.LYRICS_LINES_CHANGED, lines)
+      sendLyricsLines(lines)
     }
   })
 
-  await TrayManager.create(overlay, settings)
+  await TrayManager.create(overlay, settings, {
+    openSettings: () => {
+      void settingsWindow?.open().catch((err) => {
+        console.error('[Tray] Failed to open settings:', err)
+      })
+    },
+    openOnboarding: () => {
+      setAutoShowEnabled(false)
+      void onboardingWindow?.open(() => {
+        setAutoShowEnabled(true)
+      }).catch((err) => {
+        console.error('[Tray] Failed to open onboarding:', err)
+      })
+    },
+    updateSettings: (patch) => {
+      const next = settingsService?.update(patch) ?? SettingsStore.update(patch)
+      Object.assign(settings, next)
+      if (patch.lyricsScriptMode !== undefined) {
+        refreshLyricsDisplay()
+      }
+    }
+  })
+
+  if (!settings.onboardingComplete) {
+    setAutoShowEnabled(false)
+    setTimeout(() => {
+      void onboardingWindow?.open(() => {
+        setAutoShowEnabled(true)
+      }).catch((err) => {
+        console.error('[Bootstrap] Failed to open onboarding:', err)
+      })
+    }, 300)
+  }
 
   registerLifecycle(() => {
     if (!overlay?.window) {
       bootstrap()
     }
   })
+
+  startUpdateCheck()
 }
 
 app.whenReady().then(bootstrap).catch(console.error)
@@ -243,9 +394,5 @@ app.on('will-quit', () => {
   if (lyricTimer) {
     clearInterval(lyricTimer)
     lyricTimer = null
-  }
-  if (textColorTimer) {
-    clearInterval(textColorTimer)
-    textColorTimer = null
   }
 })

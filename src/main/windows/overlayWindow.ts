@@ -1,68 +1,67 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
-import type { OverlaySettings, OverlayState } from '../../shared/types/settings'
+import { loadRendererPage } from './loadRendererPage'
+import type { OverlaySettings, OverlayState, SafeAreaProfile, OverlayPanelMode } from '../../shared/types/settings'
 import { IpcChannels } from '../../shared/types/ipc'
 import {
-  DEFAULT_OVERLAY_BOTTOM_GAP,
   DEFAULT_OVERLAY_HEIGHT,
+  DEFAULT_OVERLAY_HEIGHT_DUAL_LINE,
+  SAFE_AREA_BOTTOM_GAPS,
   getOverlayWidthForDisplay
 } from '../../shared/constants/defaults'
 import { SettingsStore } from '../settings/settingsStore'
 
-const MOVE_DEBOUNCE_MS = 500
-const DRAG_MODE_OVERLAY_HEIGHT = 76
+const MOVE_DEBOUNCE_MS = 150
+const DRAG_MODE_EXTRA_HEIGHT = 20
+export const POSITION_NUDGE_PX = 32
 
 export class OverlayWindowManager {
   private win: BrowserWindow | null = null
   private moveTimer: ReturnType<typeof setTimeout> | null = null
+  private panelMode: OverlayPanelMode = 'lyrics'
+  private savedLyricsBounds: Electron.Rectangle | null = null
+  private panelCompleteCallback: (() => void) | null = null
 
   constructor(private settings: OverlaySettings) {}
 
   async create(): Promise<void> {
-    let { x, y, width, height } = this.settings
-    const display = screen.getDisplayNearestPoint({ x, y })
-    const area = display.workArea
-    const isOffscreen =
-      x < area.x - width ||
-      y < area.y - height ||
-      x > area.x + area.width ||
-      y > area.y + area.height
+    const targetHeight = this.getContentHeight()
+    let x = this.settings.x
+    let y = this.settings.y
+    let width = this.settings.width
+    let height = targetHeight
 
-    if (isOffscreen) {
-      const centered = this.getBottomCenterPosition(height)
-      x = centered.x
-      y = centered.y
-      width = centered.width
-      this.settings.x = x
-      this.settings.y = y
-      this.settings.width = width
-      SettingsStore.set('x', x)
-      SettingsStore.set('y', y)
-      SettingsStore.set('width', width)
-    }
+    if (this.settings.useCustomPosition) {
+      const display = screen.getDisplayNearestPoint({ x, y })
+      const area = display.workArea
+      const isOffscreen =
+        x < area.x - width ||
+        y < area.y - height ||
+        x > area.x + area.width ||
+        y > area.y + area.height
 
-    // Shrink legacy tall windows so lyrics sit on the bottom edge.
-    if (height > 80) {
-      const oldBottom = y + height
-      height = DEFAULT_OVERLAY_HEIGHT
-      y = oldBottom - height
-      this.settings.height = height
-      this.settings.y = y
-      SettingsStore.set('height', height)
-      SettingsStore.set('y', y)
-    }
-
-    // Full-width bottom bar keeps lyrics centered on screen.
-    const { workArea } = display
-    const fullWidth = getOverlayWidthForDisplay(workArea.width)
-    if (width !== fullWidth || x !== workArea.x) {
-      width = fullWidth
+      if (isOffscreen) {
+        const centered = this.getBottomCenterPosition(targetHeight)
+        x = centered.x
+        y = centered.y
+        width = centered.width
+      }
+    } else {
+      const { workArea } = screen.getPrimaryDisplay()
+      width = getOverlayWidthForDisplay(workArea.width)
       x = workArea.x
-      this.settings.width = width
-      this.settings.x = x
-      SettingsStore.set('width', width)
-      SettingsStore.set('x', x)
+      const bottomGap = this.getBottomGap()
+      y = Math.round(workArea.y + workArea.height - height - bottomGap)
     }
+
+    this.settings.x = x
+    this.settings.y = y
+    this.settings.width = width
+    this.settings.height = height
+    SettingsStore.set('x', x)
+    SettingsStore.set('y', y)
+    SettingsStore.set('width', width)
+    SettingsStore.set('height', height)
 
     this.win = new BrowserWindow({
       x,
@@ -81,7 +80,6 @@ export class OverlayWindowManager {
       fullscreenable: false,
       skipTaskbar: true,
       alwaysOnTop: true,
-      // focusable: false keeps the overlay from stealing focus when clicked in drag mode
       focusable: false,
       show: false,
       webPreferences: {
@@ -93,11 +91,8 @@ export class OverlayWindowManager {
       }
     })
 
-    // Highest always-on-top level: appears above fullscreen apps including video players
     this.win.setAlwaysOnTop(true, 'screen-saver', 1)
-    // Visible on all macOS Spaces and above full-screen apps
     this.win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    // Prevent Cmd+W or accidental fullscreen
     this.win.setFullScreenable(false)
 
     if (this.settings.clickThrough) {
@@ -110,15 +105,14 @@ export class OverlayWindowManager {
     })
 
     if (process.env['NODE_ENV'] === 'development') {
-      this.win.loadURL(process.env['ELECTRON_RENDERER_URL']!)
+      await loadRendererPage(this.win, 'index')
     } else {
-      this.win.loadFile(join(__dirname, '../renderer/index.html'))
+      await this.win.loadFile(join(__dirname, '../renderer/index.html'))
     }
 
     this.win.once('ready-to-show', () => {
-      this.clampToWorkArea()
-      if (this.settings.visible) {
-        this.win?.show()
+      if (!this.settings.useCustomPosition) {
+        this.clampToWorkArea()
       }
     })
   }
@@ -156,28 +150,135 @@ export class OverlayWindowManager {
     this.broadcastState()
   }
 
+  setOpacity(opacity: number): void {
+    this.settings.opacity = opacity
+    SettingsStore.set('opacity', opacity)
+    this.broadcastState()
+  }
+
+  setDualLineMode(enabled: boolean): void {
+    this.settings.dualLineMode = enabled
+    SettingsStore.set('dualLineMode', enabled)
+    this.resizeToContentHeight()
+    this.broadcastState()
+  }
+
+  setSafeAreaProfile(profile: SafeAreaProfile): void {
+    this.settings.safeAreaProfile = profile
+    SettingsStore.set('safeAreaProfile', profile)
+    this.resetPosition()
+    this.broadcastState()
+  }
+
   setDragMode(enabled: boolean): void {
     if (!this.win) return
-    this.persistCurrentBounds()
+    if (this.moveTimer) {
+      clearTimeout(this.moveTimer)
+      this.moveTimer = null
+    }
+    this.persistCurrentBounds(true)
     this.setClickThrough(!enabled)
     this.settings.dragMode = enabled
     SettingsStore.set('dragMode', enabled)
+    this.resizeToContentHeight()
+
+    this.persistCurrentBounds(true)
+    this.broadcastState()
+  }
+
+  nudgePosition(dx: number, dy: number): void {
+    if (!this.win || this.win.isDestroyed()) return
 
     const bounds = this.win.getBounds()
-    const targetHeight = enabled ? DRAG_MODE_OVERLAY_HEIGHT : DEFAULT_OVERLAY_HEIGHT
-    const bottom = bounds.y + bounds.height
-    const nextY = bottom - targetHeight
-    this.win.setBounds({ x: bounds.x, y: nextY, width: bounds.width, height: targetHeight })
-    this.settings.height = targetHeight
-    this.settings.y = nextY
-    SettingsStore.set('height', targetHeight)
-    SettingsStore.set('y', nextY)
-
-    if (!enabled) {
-      // Capture final window position after the drag release event is committed.
-      setTimeout(() => this.persistCurrentBounds(), 80)
-    }
+    this.applyBounds({
+      x: bounds.x + dx,
+      y: bounds.y + dy,
+      width: bounds.width,
+      height: bounds.height
+    })
+    this.persistCurrentBounds(true)
     this.broadcastState()
+  }
+
+  getPanelMode(): OverlayPanelMode {
+    return this.panelMode
+  }
+
+  async showPanel(mode: 'settings' | 'onboarding', onComplete?: () => void): Promise<void> {
+    if (!this.win || this.win.isDestroyed()) return
+
+    if (this.panelMode === 'lyrics') {
+      this.savedLyricsBounds = this.win.getBounds()
+    }
+
+    this.panelMode = mode
+    this.panelCompleteCallback = onComplete ?? null
+
+    const sizes = {
+      settings: { width: 780, height: 520 },
+      onboarding: { width: 480, height: 540 }
+    }
+    const { width, height } = sizes[mode]
+    const { workArea } = screen.getPrimaryDisplay()
+    const x = Math.round(workArea.x + (workArea.width - width) / 2)
+    const y = Math.round(workArea.y + (workArea.height - height) / 2)
+
+    this.win.setBackgroundColor('#f2f2f7')
+    this.win.setFocusable(true)
+    this.win.setIgnoreMouseEvents(false)
+    this.win.setAlwaysOnTop(true, 'screen-saver', 1)
+
+    this.suppressMoveHandler = true
+    this.win.setBounds({ x, y, width, height })
+    this.suppressMoveHandler = false
+
+    this.win.show()
+    this.broadcastPanelMode()
+  }
+
+  closePanel(): void {
+    if (this.panelMode === 'lyrics') return
+
+    const callback = this.panelCompleteCallback
+    this.panelCompleteCallback = null
+    this.restoreLyricsPanel()
+    callback?.()
+  }
+
+  private restoreLyricsPanel(): void {
+    if (!this.win || this.win.isDestroyed()) return
+
+    this.panelMode = 'lyrics'
+    this.win.setBackgroundColor('#00000000')
+    this.win.setFocusable(false)
+
+    if (this.savedLyricsBounds) {
+      this.suppressMoveHandler = true
+      this.win.setBounds(this.savedLyricsBounds)
+      this.settings.x = this.savedLyricsBounds.x
+      this.settings.y = this.savedLyricsBounds.y
+      this.settings.width = this.savedLyricsBounds.width
+      this.settings.height = this.savedLyricsBounds.height
+      SettingsStore.set('x', this.savedLyricsBounds.x)
+      SettingsStore.set('y', this.savedLyricsBounds.y)
+      SettingsStore.set('width', this.savedLyricsBounds.width)
+      SettingsStore.set('height', this.savedLyricsBounds.height)
+      this.savedLyricsBounds = null
+      this.suppressMoveHandler = false
+    }
+
+    if (this.settings.dragMode) {
+      this.win.setIgnoreMouseEvents(false)
+    } else {
+      this.win.setIgnoreMouseEvents(true, { forward: true })
+    }
+
+    this.broadcastPanelMode()
+  }
+
+  private broadcastPanelMode(): void {
+    if (!this.win || this.win.isDestroyed()) return
+    this.win.webContents.send(IpcChannels.OVERLAY_PANEL_MODE_CHANGED, this.panelMode)
   }
 
   getState(): OverlayState {
@@ -196,7 +297,10 @@ export class OverlayWindowManager {
       y: bounds.y,
       width: bounds.width,
       height: bounds.height,
-      opacity: this.settings.opacity
+      opacity: this.settings.opacity,
+      fontSizePx: this.settings.fontSizePx,
+      fontPreset: this.settings.fontPreset,
+      dualLineMode: this.settings.dualLineMode
     }
   }
 
@@ -209,28 +313,82 @@ export class OverlayWindowManager {
     return this.win
   }
 
+  private getBottomGap(): number {
+    return SAFE_AREA_BOTTOM_GAPS[this.settings.safeAreaProfile] ?? SAFE_AREA_BOTTOM_GAPS.dock
+  }
+
+  private getContentHeight(): number {
+    const base = this.settings.dualLineMode ? DEFAULT_OVERLAY_HEIGHT_DUAL_LINE : DEFAULT_OVERLAY_HEIGHT
+    return this.settings.dragMode ? base + DRAG_MODE_EXTRA_HEIGHT : base
+  }
+
+  private resizeToContentHeight(): void {
+    if (!this.win || this.win.isDestroyed()) return
+    const bounds = this.win.getBounds()
+    const targetHeight = this.getContentHeight()
+    this.applyBounds({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: targetHeight
+    })
+  }
+
   private onMoved(): void {
+    if (this.suppressMoveHandler) return
     if (this.moveTimer) clearTimeout(this.moveTimer)
     this.moveTimer = setTimeout(() => {
-      this.persistCurrentBounds()
+      this.persistCurrentBounds(true)
     }, MOVE_DEBOUNCE_MS)
   }
 
-  private persistCurrentBounds(): void {
+  private suppressMoveHandler = false
+
+  private applyBounds(bounds: { x: number; y: number; width: number; height: number }): void {
     if (!this.win || this.win.isDestroyed()) return
-    const { x, y } = this.win.getBounds()
-    SettingsStore.set('x', x)
-    SettingsStore.set('y', y)
-    this.settings.x = x
-    this.settings.y = y
+
+    this.suppressMoveHandler = true
+    this.win.setBounds(bounds)
+    this.clampToWorkArea()
+    const applied = this.win.getBounds()
+    this.settings.x = applied.x
+    this.settings.y = applied.y
+    this.settings.width = applied.width
+    this.settings.height = applied.height
+    SettingsStore.set('x', applied.x)
+    SettingsStore.set('y', applied.y)
+    SettingsStore.set('width', applied.width)
+    SettingsStore.set('height', applied.height)
+    this.suppressMoveHandler = false
   }
 
-  private getBottomCenterPosition(height = this.settings.height): { x: number; y: number; width: number } {
+  private markCustomPosition(): void {
+    this.settings.useCustomPosition = true
+    SettingsStore.set('useCustomPosition', true)
+  }
+
+  private persistCurrentBounds(markCustom = false): void {
+    if (!this.win || this.win.isDestroyed()) return
+    const { x, y, width, height } = this.win.getBounds()
+    SettingsStore.set('x', x)
+    SettingsStore.set('y', y)
+    SettingsStore.set('width', width)
+    SettingsStore.set('height', height)
+    this.settings.x = x
+    this.settings.y = y
+    this.settings.width = width
+    this.settings.height = height
+    if (markCustom) {
+      this.markCustomPosition()
+    }
+  }
+
+  private getBottomCenterPosition(height = this.getContentHeight()): { x: number; y: number; width: number } {
     const { workArea } = screen.getPrimaryDisplay()
     const width = getOverlayWidthForDisplay(workArea.width)
     return {
       x: workArea.x,
-      y: Math.round(workArea.y + workArea.height - height - DEFAULT_OVERLAY_BOTTOM_GAP),
+      y: Math.round(workArea.y + workArea.height - height - this.getBottomGap()),
       width
     }
   }
@@ -245,11 +403,16 @@ export class OverlayWindowManager {
 
     const bottom = y + height
     const workBottom = workArea.y + workArea.height
-    if (bottom > workBottom - DEFAULT_OVERLAY_BOTTOM_GAP) {
-      y = workBottom - height - DEFAULT_OVERLAY_BOTTOM_GAP
+    const bottomGap = this.getBottomGap()
+    const maxBottom = workBottom - bottomGap
+    if (bottom > maxBottom) {
+      y = maxBottom - height
     }
     if (y < workArea.y) {
       y = workArea.y
+    }
+    if (y + height > maxBottom) {
+      y = maxBottom - height
     }
 
     const minX = workArea.x
@@ -257,7 +420,7 @@ export class OverlayWindowManager {
     x = Math.min(Math.max(x, minX), maxX)
 
     if (x !== bounds.x || y !== bounds.y) {
-      this.win.setPosition(x, y)
+      this.win.setBounds({ x, y, width, height })
       this.settings.x = x
       this.settings.y = y
       SettingsStore.set('x', x)
@@ -267,20 +430,19 @@ export class OverlayWindowManager {
 
   resetPosition(): void {
     if (!this.win) return
-    const { x, y, width } = this.getBottomCenterPosition(DEFAULT_OVERLAY_HEIGHT)
-    this.win.setBounds({
-      x,
-      y,
-      width,
-      height: DEFAULT_OVERLAY_HEIGHT
-    })
+    const height = this.getContentHeight()
+    const { x, y, width } = this.getBottomCenterPosition(height)
+    this.applyBounds({ x, y, width, height })
     SettingsStore.set('x', x)
     SettingsStore.set('y', y)
     SettingsStore.set('width', width)
-    SettingsStore.set('height', DEFAULT_OVERLAY_HEIGHT)
+    SettingsStore.set('height', height)
+    SettingsStore.set('useCustomPosition', false)
     this.settings.x = x
     this.settings.y = y
     this.settings.width = width
-    this.settings.height = DEFAULT_OVERLAY_HEIGHT
+    this.settings.height = height
+    this.settings.useCustomPosition = false
+    this.broadcastState()
   }
 }

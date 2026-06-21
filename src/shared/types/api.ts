@@ -1,4 +1,4 @@
-import type { OverlayState, OverlaySettings } from './settings'
+import type { OverlayState, OverlaySettings, OverlayPanelMode } from './settings'
 import type { NowPlayingTrack } from './song'
 import type { ActiveLines } from './lyrics'
 
@@ -16,10 +16,21 @@ export interface goLyricsAPI {
   setDragMode: (enabled: boolean) => Promise<OverlayState>
   setClickThrough: (enabled: boolean) => Promise<OverlayState>
   onOverlayStateChanged: (cb: (state: OverlayState) => void) => Unsubscribe
+  getPanelMode: () => Promise<OverlayPanelMode>
+  closePanel: () => Promise<OverlayPanelMode>
+  onPanelModeChanged: (cb: (mode: OverlayPanelMode) => void) => Unsubscribe
 
   // Settings
   getSettings: () => Promise<OverlaySettings>
   updateSettings: (patch: Partial<OverlaySettings>) => Promise<OverlaySettings>
+  openSettings: () => Promise<void>
+  resetOverlayPosition: () => Promise<void>
+  clearLyricsCache: () => Promise<number>
+  onSettingsChanged: (cb: (settings: OverlaySettings) => void) => Unsubscribe
+
+  // Onboarding
+  completeOnboarding: () => Promise<void>
+  openSystemSettings: (pane: 'automation') => Promise<void>
 
   // Song detection (Phase 3)
   refreshSong: () => Promise<NowPlayingTrack | null>
@@ -28,5 +39,4 @@ export interface goLyricsAPI {
   // Lyrics (Phase 2)
   reloadLyrics: () => Promise<boolean>
   onLyricsChanged: (cb: (lines: ActiveLines) => void) => Unsubscribe
-  onLyricsTextColorChanged: (cb: (color: 'black' | 'white') => void) => Unsubscribe
 }

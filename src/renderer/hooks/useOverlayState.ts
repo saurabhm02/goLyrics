@@ -7,22 +7,23 @@ const DEFAULT_STATE: OverlayState = {
   dragMode: false,
   x: 0,
   y: 0,
-  width: 600,
-  height: 160,
-  opacity: 0.92
+  width: 720,
+  height: 56,
+  opacity: 0.92,
+  fontSizePx: 34,
+  fontPreset: 'classic',
+  dualLineMode: false
 }
 
 export function useOverlayState(): OverlayState {
   const [state, setState] = useState<OverlayState>(DEFAULT_STATE)
 
   useEffect(() => {
-    // Fetch initial state from main process
     window.goLyrics
       .getOverlayState()
       .then(setState)
       .catch(() => {})
 
-    // Subscribe to state changes pushed from main
     const unsubscribe = window.goLyrics.onOverlayStateChanged(setState)
     return unsubscribe
   }, [])

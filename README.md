@@ -1,220 +1,185 @@
 # goLyrics
 
-`goLyrics` is a macOS desktop overlay app that shows synchronized karaoke lyrics on top of any window while music is playing.
+macOS menu bar app that shows synchronized karaoke lyrics in a transparent overlay while music plays. Built with Electron, React, and TypeScript.
 
-It is built with Electron, React, TypeScript, and plain CSS.
+## What it does
 
----
-
-## What goLyrics does
-
-- Detects currently playing YouTube tracks from Google Chrome
-- Displays live or synced lyrics in an always-on-top transparent overlay
-- Supports click-through mode so you can keep interacting with apps under the overlay
-- Lets you drag and persist overlay position
-- Runs as a menu bar utility with hotkeys
-
----
-
-## Current status
-
-This project is under active development and currently focused on macOS + YouTube.
-
-Implemented:
-- Transparent overlay window
-- Always-on-top behavior over fullscreen apps
-- Drag mode + click-through mode
-- Song detection via Chrome tab introspection
-- Lyrics pipeline:
-  - YouTube transcript provider
-  - LRCLIB fallback (synced lyrics + plain lyrics fallback)
-
-Planned:
-- Better provider reliability across tabs/windows
-- Spotify / Apple Music providers
-- Smarter lyric scoring and per-track offset calibration
-- Packaging/signing/notarization release workflow
-
----
+- Detects playback from **macOS Now Playing**, **Spotify**, **Apple Music**, and **YouTube** in Chrome, Arc, Edge, or Safari
+- Shows lyrics automatically when music starts; hides when playback stops or pauses
+- Fetches synced lyrics from **LRCLIB**, with **YouTube transcript** as a fallback when captions are available
+- Displays **romanized (Hinglish)** or **original script** for Indic lyrics
+- Runs as a click-through overlay above fullscreen apps
+- Remembers overlay position, per-track sync offsets, and a local lyrics cache
 
 ## Requirements
 
-- macOS 13+ (Ventura or newer)
+- macOS 13+
 - Node.js 20+
-- Google Chrome
+- At least one configured music source (see **Settings → Sources**)
 
----
-
-## Local setup
+## Quick start
 
 ```bash
-git clone <your-fork-or-repo-url>
+git clone <repo-url>
 cd golyrics
 npm install
 npm run dev
 ```
 
-Dev server commands:
-
 ```bash
-npm run dev        # run Electron + Vite in development
-npm run typecheck  # TypeScript checks
-npm run build      # production build to out/
+npm run typecheck   # TypeScript
+npm run build       # production bundle to out/
+npm run dist:mac    # local DMG in release/
 ```
 
----
+## Permissions
 
-## Permissions and privacy
+| Access | Where to grant | Purpose |
+|--------|----------------|---------|
+| Automation | System Settings → Privacy & Security → Automation | Read now-playing from Music, Spotify, and browsers |
+| Network | Firewall prompt if enabled | LRCLIB and YouTube transcript APIs |
 
-goLyrics requests access to a few macOS and Chrome capabilities so it can detect songs, sync lyrics, and keep text readable over any background.
+For accurate YouTube sync in Chromium browsers, also enable **Allow JavaScript from Apple Events** in the browser’s Developer menu. This lets goLyrics read playback time, live captions, channel name, and the on-page video title.
 
-| Permission / access | Where to grant | Why goLyrics needs it |
-|---------------------|----------------|------------------------|
-| **Automation** (control Google Chrome) | `System Settings` → `Privacy & Security` → `Automation` | Reads the active YouTube tab title, URL, playback time, and live captions from Chrome via AppleScript |
-| **Screen Recording** | `System Settings` → `Privacy & Security` → `Screen Recording` | Samples the screen behind the lyric overlay to choose black or white text automatically |
-| **Network access** | macOS firewall prompt (if enabled) | Fetches lyrics from LRCLIB and YouTube transcript APIs |
-| **Menu bar / background app** | No extra prompt | Runs as a menu bar utility with global hotkeys |
+goLyrics does not use Screen Recording, microphone, or camera access.
 
-### Chrome setting (not a macOS permission)
+## Menu bar
 
-For precise playback sync, enable this in Chrome:
+**Left-click** the menu bar icon to open the menu. It does not hide the overlay.
 
-- `View` → `Developer` → `Allow JavaScript from Apple Events`
+| Item | Action |
+|------|--------|
+| Show / Hide Overlay | Toggle visibility (`Option+L`) |
+| Settings… | Appearance, sync, sources, system |
+| Setup Permissions… | Onboarding wizard |
+| Lyrics Script | Romanized (Latin / Hinglish) or Original script |
+| Toggle Drag Mode | Drag the overlay to reposition |
+| Position | Nudge left/right/up/down; reset to bottom default |
+| Click-Through | Pass mouse clicks to apps below |
+| Show in Dock | Dock icon visibility |
+| Quit | Exit (`Command+Q`) |
 
-Without Automation + this Chrome setting, song detection and lyric timing may be limited or unavailable.
+### Drag mode workflow
 
-### What goLyrics does **not** access
+1. Menu → **Toggle Drag Mode** (or tray checkbox)
+2. Drag the overlay to the desired spot
+3. Menu → **Toggle Drag Mode** again to return to click-through
 
-- Microphone or camera
-- Contacts, photos, or files outside its own settings folder
-- Keyboard input outside registered global hotkeys
-- Your Chrome passwords or saved form data
+Custom position persists across restarts. Use **Position → Reset to Bottom (default)** or **Settings → Maintenance → Reset overlay position** to restore the default placement.
 
-Settings are stored locally at:
-
-`~/Library/Application Support/goLyrics/config.json`
-
----
-
-## First-run setup (quick checklist)
-
-1. Launch goLyrics (`npm run dev` or the built `.dmg` app)
-2. Grant **Automation** for `goLyrics` / `Electron` → **Google Chrome**
-3. Grant **Screen Recording** for `goLyrics` / `Electron` (needed for auto text color)
-4. In Chrome, enable **Allow JavaScript from Apple Events**
-5. Play a YouTube video in Chrome and confirm lyrics appear at the bottom center
-
-Without the permissions above, detection, sync, and automatic text color may be degraded or unavailable.
-
----
-
-## Usage
-
-### Hotkeys
+## Hotkeys
 
 | Hotkey | Action |
 |--------|--------|
-| `Option + L` | Toggle overlay visibility |
-| `Option + Space` | Force song detection refresh |
-| `Option + R` | Reload lyrics |
-| `Option + ↑` | Shift lyrics earlier (per-track offset) |
-| `Option + ↓` | Shift lyrics later (per-track offset) |
-| `Option + 0` | Reset per-track sync offset |
+| `Option+L` | Show / hide overlay |
+| `Option+Space` | Refresh song detection |
+| `Option+R` | Reload lyrics |
+| `Option+↑` | Shift lyrics earlier (per-track offset) |
+| `Option+↓` | Shift lyrics later |
+| `Option+0` | Reset per-track sync offset |
 
-### Menu bar controls
+## Settings
 
-- Show/Hide Overlay
-- Settings…
-- Setup Permissions…
-- Toggle Drag Mode
-- Toggle Click-Through
-- Reset Position
-- Show in Dock
-- Quit
+Open from the tray menu (**Settings…**) or the first-run onboarding wizard.
 
-### Drag mode
+| Section | Options |
+|---------|---------|
+| **Appearance** | Opacity, font size, font preset, dual-line mode, safe area (Dock / Fullscreen / Notch), lyrics script (Romanized or Original) |
+| **Sync** | Lyric lead time (how early the next line appears) |
+| **Sources** | Enable macOS Now Playing, Spotify, Apple Music; pick a YouTube browser or Off |
+| **System** | Launch at login, show in Dock |
+| **Maintenance** | Reset overlay position, clear lyrics cache |
 
-- Turn on `Toggle Drag Mode` from menu bar
-- Drag overlay to desired location
-- Turn off drag mode
-- Position persists in settings
+### Settings → Sources
 
-Settings location:
+Limit which providers are polled every 500ms. Fewer sources reduce CPU and AppleScript load.
 
-`~/Library/Application Support/goLyrics/config.json`
+- **macOS Now Playing** — lightweight system media session (Control Center)
+- **Spotify** / **Apple Music** — per-app AppleScript
+- **YouTube in browser** — Chrome, Arc, Edge, Safari, or Off
 
----
+New installs default to macOS Now Playing + Chrome. Upgrading from an earlier version keeps all sources enabled until you change this.
 
-## Packaging (.dmg)
+## How lyrics are found
 
-Build a local DMG artifact:
+goLyrics tries providers in order:
 
-```bash
-npm run dist:mac
+1. **YouTube transcript** — only when the video has captions (live CC or transcript track)
+2. **LRCLIB** — community synced lyrics; works without YouTube captions
+
+### Artist matching (YouTube)
+
+YouTube does not always expose the performer as metadata. goLyrics resolves artist like this:
+
+| Video style | Example | Artist used for LRCLIB |
+|-------------|---------|-------------------------|
+| Label channel, artist in title | `Aankhon Se Batana – Dikshant \| Official Video` on Sony Music India | **Dikshant** (parsed from title), then channel name |
+| Artist-owned channel, plain title | `Thinking of You` on **APDHILLON** | **AP Dhillon** (from channel name; compact handles like `APDHILLON` are normalized) |
+| Title contains `Artist - Song` | `AP Dhillon - With You` | **AP Dhillon** (from title prefix) |
+
+LRCLIB results are validated against title, artist, and duration before they are shown or cached.
+
+### Lyrics script
+
+- **Romanized (default)** — Devanagari, Gurmukhi, and similar scripts are shown in Latin letters (Hinglish-style pronunciation). English lyrics stay in English.
+- **Original** — native script is preserved.
+
+Change via tray **Lyrics Script** or **Settings → Appearance**.
+
+## Data on disk
+
+All files live under `~/Library/Application Support/goLyrics/`:
+
+| File | Purpose |
+|------|---------|
+| `config.json` | Overlay position, appearance, enabled sources, onboarding flag |
+| `lyrics-cache.json` | Fetched lyrics (positive entries, 30-day TTL) and short-lived “not found” entries (5-minute TTL) |
+| `sync-offsets.json` | Per-track timing adjustments from `Option+↑` / `Option+↓` |
+
+### Lyrics cache keys
+
+Cache keys match track identity:
+
+```
+yt:{videoId}:{normalized-title}
 ```
 
-Output:
+Example: `yt:2vKMY75kvjI:aankhon se batana – dikshant | viral song | official video`
 
-- `release/goLyrics-<version>.dmg`
+Non-YouTube tracks use `{providerId}::{artist}::{title}`.
 
-Unsigned local builds work for development. Signed releases are published via GitHub Actions when you push a version tag (for example `v0.2.0`).
+Use **Settings → Maintenance → Clear lyrics cache** if lyrics look wrong or stale after a fix or track change.
 
-### GitHub Releases (signed + notarized)
+## Releases
 
-The workflow at `.github/workflows/release.yml` builds a signed DMG on tag push.
+Unsigned local builds: `npm run dist:mac` → `release/goLyrics-<version>.dmg`
 
-Required repository secrets:
+Signed releases: push a version tag (e.g. `v0.2.0`). See `.github/workflows/release.yml` and repository secrets for `CSC_*` and Apple notarization variables. The app checks GitHub Releases for updates when distributed via a signed build.
 
-| Secret | Purpose |
-|--------|---------|
-| `CSC_LINK` | Base64-encoded `.p12` signing certificate |
-| `CSC_KEY_PASSWORD` | Certificate password |
-| `APPLE_ID` | Apple ID used for notarization |
-| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password |
-| `APPLE_TEAM_ID` | Apple Developer Team ID |
+## Project layout
 
-Create a release:
-
-```bash
-git tag v0.2.0
-git push origin v0.2.0
 ```
-
-Download the DMG from the GitHub Releases page after the workflow completes.
-
----
-
-## Repository structure
-
-- `src/main` - Electron main process (window/tray/hotkeys/providers orchestration)
-- `src/preload` - secure bridge APIs
-- `src/renderer` - React UI overlay
-- `src/providers` - song/lyrics provider implementations
-- `src/engine` - karaoke sync engine
-- `docs` - architecture/design docs
-
----
+src/main/       Electron main process, tray, IPC, orchestrators, cache
+src/preload/    contextBridge API
+src/renderer/   Overlay, settings, and onboarding UI
+src/providers/  Song and lyrics providers
+src/engine/     Karaoke sync engine
+src/shared/     Types, defaults, matching utilities
+docs/           Architecture notes
+```
 
 ## Contributing
 
-See:
-
-- `CONTRIBUTING.md`
-- `CODE_OF_CONDUCT.md`
-- `SECURITY.md`
-
-Before opening a PR:
+See `CONTRIBUTING.md`. Before a PR:
 
 ```bash
-npm run typecheck
-npm run build
+npm run typecheck && npm run build
 ```
-
----
 
 ## Known limitations
 
-- macOS automation permissions can block Chrome integration
-- Some songs/videos have no accessible transcript/lyrics from configured providers
-- Timing may need per-track calibration due to provider/source drift
-- Full App Store distribution may be constrained by automation/sandbox rules
+- macOS Automation must be granted for each music app you enable
+- Not all tracks have synced or transcript lyrics on LRCLIB
+- Label channels (Sony, T-Series, etc.) need the performer in the title or a matching LRCLIB entry
+- Per-track offset may be needed for some sources
+- App Store distribution is constrained by Automation and sandbox rules

@@ -43,11 +43,11 @@ goLyrics is an Electron macOS desktop app that displays karaoke-style synchroniz
 | Main entry | `src/main/index.ts` | Bootstrap, wire all managers |
 | Lifecycle | `src/main/app/lifecycle.ts` | `app.whenReady`, quit, activate |
 | Overlay window | `src/main/windows/overlayWindow.ts` | BrowserWindow lifecycle, click-through, drag mode, bounds persistence |
-| Tray | `src/main/tray/trayManager.ts` | Menu bar icon + context menu |
+| Tray | `src/main/tray/trayManager.ts` | Menu bar icon + context menu (left-click opens menu; show/hide via menu or Option+L) |
 | Hotkeys | `src/main/hotkeys/globalShortcuts.ts` | Global keyboard shortcuts |
 | IPC handlers | `src/main/ipc/registerIpc.ts` | Route renderer ↔ main calls |
 | Settings | `src/main/settings/settingsStore.ts` | electron-store persistence |
-| Song orchestrator | `src/main/services/songOrchestrator.ts` | Provider polling loop |
+| Song orchestrator | `src/main/services/songOrchestrator.ts` | Provider polling loop (filters by Settings → Sources) |
 | Lyrics orchestrator | `src/main/services/lyricsOrchestrator.ts` | Fetch/cache lyrics |
 | Preload | `src/preload/index.ts` | contextBridge typed API |
 | Shared types | `src/shared/types/` | IPC contracts, domain types |
@@ -85,7 +85,13 @@ All IPC is defined in `src/shared/types/ipc.ts`. The preload bridge (`src/preloa
 
 `electron-store` writes to: `~/Library/Application Support/goLyrics/config.json`
 
-Fields: x, y, width, height, visible, clickThrough, dragMode, showInDock, opacity.
+Fields: x, y, width, height, visible, clickThrough, dragMode, showInDock, opacity, plus song source toggles (`enableMacOSNowPlaying`, `enableSpotify`, `enableAppleMusic`, `youtubeBrowser`).
+
+## Selective Song Polling
+
+Settings → **Sources** controls which song providers `SongOrchestrator` polls every 500ms. Only enabled provider IDs (resolved via `src/shared/constants/songSources.ts`) run `isAvailable()` / `getNowPlaying()`. Existing users upgrading without new keys get legacy behavior (all sources). New installs default to macOS Now Playing + Chrome YouTube only.
+
+Overlay position: drag or tray **Position** nudges set `useCustomPosition` in settings; `create()` respects saved bounds on restart. **Reset to Bottom** clears custom placement.
 
 ## Phase Roadmap
 
@@ -95,4 +101,4 @@ Fields: x, y, width, height, visible, clickThrough, dragMode, showInDock, opacit
 | 2 | LRC parser, karaoke sync engine, local .lrc loading |
 | 3 | Real song detection (macOS Now Playing, Spotify, Apple Music, Chrome) |
 | 4 | Auto lyric fetch (LRCLIB / Musixmatch), cache layer |
-| 5 | Settings window, themes, auto-start, error states |
+| 5 | Settings window, onboarding wizard, lyrics cache, signed releases |

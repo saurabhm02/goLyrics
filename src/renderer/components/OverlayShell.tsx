@@ -17,7 +17,12 @@ export function OverlayShell({ lines, track }: OverlayShellProps): React.JSX.Ele
     <div className={`overlay-shell ${state.dragMode ? 'drag-mode' : 'click-through'}`}>
       <div className="overlay-content" style={{ opacity: state.opacity }}>
         <DragHandle visible={state.dragMode} />
-        <KaraokeDisplay lines={lines} track={track} dragMode={state.dragMode} />
+        <KaraokeDisplay
+          lines={lines}
+          track={track}
+          dragMode={state.dragMode}
+          dualLineMode={state.dualLineMode}
+        />
       </div>
     </div>
   )

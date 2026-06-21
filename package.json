@@ -1,6 +1,6 @@
 {
   "name": "golyrics",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "lyrics overlay for macOS",
   "main": "out/main/index.js",
   "author": "saurabh",
@@ -9,14 +9,17 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "dist:mac": "npm run build && electron-builder --mac dmg",
+    "dist:mac": "npm run build:helper && npm run build && electron-builder --mac dmg",
+    "build:helper": "mkdir -p resources && swiftc -O -o resources/read-now-playing scripts/read-now-playing.swift -framework MediaPlayer -framework Foundation",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "typecheck:main": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:renderer": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@indic-transliteration/sanscript": "^1.3.3",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.3.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "youtube-transcript": "^1.3.1"
@@ -48,10 +51,28 @@
         "dmg"
       ],
       "artifactName": "goLyrics-${version}.${ext}",
-      "category": "public.app-category.music"
+      "category": "public.app-category.music",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
     },
     "dmg": {
       "artifactName": "goLyrics-${version}.${ext}"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "resources/read-now-playing",
+        "to": "read-now-playing"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "saurabhm02",
+        "repo": "goLyrics"
+      }
+    ]
   }
 }

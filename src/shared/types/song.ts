@@ -1,4 +1,4 @@
-export type SongSource = 'macos' | 'spotify' | 'apple-music' | 'youtube' | 'unknown'
+export type SongSource = 'macos' | 'spotify' | 'apple-music' | 'youtube' | 'system' | 'unknown'
 
 export interface NowPlayingTrack {
   title: string

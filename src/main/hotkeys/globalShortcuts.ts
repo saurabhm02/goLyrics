@@ -1,21 +1,30 @@
 import { globalShortcut, app } from 'electron'
 import { Hotkeys } from '../../shared/constants/hotkeys'
 import { IpcChannels } from '../../shared/types/ipc'
+import { SYNC_OFFSET_STEP_MS } from '../../shared/constants/defaults'
 import type { OverlayWindowManager } from '../windows/overlayWindow'
 import type { SongOrchestrator } from '../services/songOrchestrator'
 import type { LyricsOrchestrator } from '../services/lyricsOrchestrator'
+import { toggleOverlayWithDismiss } from '../services/overlayVisibility'
+
+export interface SyncOffsetHandlers {
+  getCurrentTrackKey: () => string | null
+  adjustOffset: (deltaMs: number) => void
+  resetOffset: () => void
+}
 
 export const GlobalShortcutManager = {
   register(
     overlay: OverlayWindowManager,
     songOrchestrator: SongOrchestrator,
-    lyricsOrchestrator: LyricsOrchestrator
+    lyricsOrchestrator: LyricsOrchestrator,
+    syncHandlers: SyncOffsetHandlers
   ): void {
     const registrations: Array<{ accelerator: string; handler: () => void }> = [
       {
         accelerator: Hotkeys.TOGGLE_OVERLAY,
         handler: () => {
-          overlay.toggle()
+          toggleOverlayWithDismiss()
         }
       },
       {
@@ -33,6 +42,24 @@ export const GlobalShortcutManager = {
           lyricsOrchestrator.reload().then(() => {
             console.log('[Hotkey] Lyrics reloaded')
           })
+        }
+      },
+      {
+        accelerator: Hotkeys.SYNC_EARLIER,
+        handler: () => {
+          syncHandlers.adjustOffset(-SYNC_OFFSET_STEP_MS)
+        }
+      },
+      {
+        accelerator: Hotkeys.SYNC_LATER,
+        handler: () => {
+          syncHandlers.adjustOffset(SYNC_OFFSET_STEP_MS)
+        }
+      },
+      {
+        accelerator: Hotkeys.SYNC_RESET,
+        handler: () => {
+          syncHandlers.resetOffset()
         }
       }
     ]
